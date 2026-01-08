@@ -129,13 +129,10 @@ def get_s3_public_url(s3_key):
     return f"https://{S3_BUCKET}.s3.{region}.amazonaws.com/{s3_key}"
 
 
-def get_image_with_url(barber_code, filename):
-    """Get image info with full S3 URL"""
+def get_image_url(barber_code, filename):
+    """Get full S3 URL for an image"""
     s3_key = get_s3_key(barber_code, filename)
-    return {
-        'filename': filename,
-        'url': get_s3_public_url(s3_key)
-    }
+    return get_s3_public_url(s3_key)
 
 
 def encode_image(image_path):
@@ -155,7 +152,7 @@ def encode_image_from_s3(s3_key):
         return None
 
 
-def get_barber_images_from_s3(barber_code, include_urls=True):
+def get_barber_images_from_s3(barber_code, as_urls=True):
     """Get list of reference images for a barber from S3"""
     prefix = f"{S3_PREFIX}/{barber_code}/"
     objects = list_s3_objects(prefix)
@@ -163,14 +160,14 @@ def get_barber_images_from_s3(barber_code, include_urls=True):
     for obj in objects:
         filename = obj['Key'].replace(prefix, '')
         if filename and allowed_file(filename):
-            if include_urls:
-                images.append(get_image_with_url(barber_code, filename))
+            if as_urls:
+                images.append(get_image_url(barber_code, filename))
             else:
                 images.append(filename)
     return images
 
 
-def get_all_barbers_from_s3(include_urls=True):
+def get_all_barbers_from_s3(as_urls=True):
     """Get all barbers and their image counts from S3"""
     prefix = f"{S3_PREFIX}/"
     objects = list_s3_objects(prefix)
@@ -185,8 +182,8 @@ def get_all_barbers_from_s3(include_urls=True):
             if filename and allowed_file(filename):
                 if barber_code not in barbers:
                     barbers[barber_code] = []
-                if include_urls:
-                    barbers[barber_code].append(get_image_with_url(barber_code, filename))
+                if as_urls:
+                    barbers[barber_code].append(get_image_url(barber_code, filename))
                 else:
                     barbers[barber_code].append(filename)
     
@@ -388,18 +385,17 @@ def upload_reference():
         return jsonify({'error': 'No valid images uploaded'}), 400
     
     # Get total images count for this barber from S3 with URLs
-    all_images = get_barber_images_from_s3(barber_code, include_urls=True)
+    all_images = get_barber_images_from_s3(barber_code, as_urls=True)
     
-    # Convert uploaded files to include URLs
-    uploaded_with_urls = [get_image_with_url(barber_code, f) for f in uploaded_files]
+    # Convert uploaded files to URLs
+    uploaded_with_urls = [get_image_url(barber_code, f) for f in uploaded_files]
     
     return jsonify({
         'success': True,
         'barber_code': barber_code,
         'uploaded_count': len(uploaded_files),
         'total_images': len(all_images),
-        'files': uploaded_with_urls,
-        'all_images': all_images
+        'files': uploaded_with_urls
     })
 
 
@@ -432,7 +428,7 @@ def get_barber(barber_code):
     if not barber_code:
         return jsonify({'error': 'Invalid barber_code'}), 400
     
-    images = get_barber_images_from_s3(barber_code, include_urls=True)
+    images = get_barber_images_from_s3(barber_code, as_urls=True)
     
     if not images:
         return jsonify({
@@ -477,7 +473,7 @@ def analyze():
     
     try:
         # Check if reference images exist in S3
-        reference_images = get_barber_images_from_s3(barber_code, include_urls=False)
+        reference_images = get_barber_images_from_s3(barber_code, as_urls=False)
         
         if not reference_images:
             return jsonify({
@@ -503,12 +499,8 @@ def analyze():
             # Compare the two images
             similarity, reason = compare_hairstyles(input_filepath, ref_s3_key)
             
-            # Get image URL
-            image_info = get_image_with_url(barber_code, ref_image)
-            
             results.append({
-                'image': image_info['filename'],
-                'image_url': image_info['url'],
+                'image': get_image_url(barber_code, ref_image),
                 'similarity': round(similarity, 1),
                 'description': ref_description,
                 'reason': reason
@@ -558,7 +550,7 @@ def analyze_all():
         input_description = describe_hairstyle(image_path=input_filepath)
         
         # Get all barbers from S3
-        barbers_data = get_all_barbers_from_s3(include_urls=False)
+        barbers_data = get_all_barbers_from_s3(as_urls=False)
         
         all_barber_results = []
         
@@ -577,12 +569,8 @@ def analyze_all():
                 # Compare the two images
                 similarity, reason = compare_hairstyles(input_filepath, ref_s3_key)
                 
-                # Get image URL
-                image_info = get_image_with_url(barber_code, ref_image)
-                
                 barber_matches.append({
-                    'image': image_info['filename'],
-                    'image_url': image_info['url'],
+                    'image': get_image_url(barber_code, ref_image),
                     'similarity': round(similarity, 1),
                     'description': ref_description,
                     'reason': reason
@@ -669,7 +657,7 @@ def delete_barber(barber_code):
         return jsonify({'error': 'Invalid barber_code'}), 400
     
     # Check if barber exists and get images before deletion
-    images = get_barber_images_from_s3(barber_code, include_urls=True)
+    images = get_barber_images_from_s3(barber_code, as_urls=True)
     if not images:
         return jsonify({
             'success': False,
@@ -681,9 +669,7 @@ def delete_barber(barber_code):
         if delete_s3_prefix(prefix):
             return jsonify({
                 'success': True,
-                'message': f'Barber {barber_code} and all associated images deleted successfully',
-                'deleted_images_count': len(images),
-                'deleted_images': images
+                'message': f'Barber {barber_code} deleted successfully'
             })
         else:
             return jsonify({
@@ -709,9 +695,6 @@ def delete_image(barber_code, filename):
     
     s3_key = get_s3_key(barber_code, filename)
     
-    # Get image info before deletion
-    image_info = get_image_with_url(barber_code, filename)
-    
     # Check if object exists
     try:
         s3_client.head_object(Bucket=S3_BUCKET, Key=s3_key)
@@ -725,8 +708,7 @@ def delete_image(barber_code, filename):
         if delete_from_s3(s3_key):
             return jsonify({
                 'success': True,
-                'message': f'Image {filename} deleted successfully',
-                'deleted_image': image_info
+                'message': f'Image {filename} deleted successfully'
             })
         else:
             return jsonify({
