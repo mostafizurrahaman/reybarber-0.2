@@ -784,4 +784,4 @@ if __name__ == '__main__':
     print("\nAI Hairstyle Matcher - S3 Based Storage")
     print("Reference images are stored in S3 bucket\n")
     
-    app.run(debug=True, host='0.0.0.0', port=8080)
+    app.run(debug=True, host='0.0.0.0', port=int(os.getenv('PORT', 8083)))
