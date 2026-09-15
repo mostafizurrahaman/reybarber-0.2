@@ -329,7 +329,11 @@ def compare_hairstyles(input_image_path, reference_s3_key):
 
 @app.route('/')
 def index():
-    print("Welcome To Reybarber")
+    return jsonify({
+        'status': 'ok',
+        'service': 'AI Hairstyle Matcher',
+        'message': 'Welcome To Reybarber'
+    })
 
 
 @app.route('/upload_reference', methods=['POST'])
